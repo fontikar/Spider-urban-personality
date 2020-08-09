@@ -1,0 +1,457 @@
+---
+title: "Main analyses"
+author: "Fonti Kar"
+date: "9/4/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, include = T)
+rm(list=ls())
+sessionInfo()
+# R version 3.6.1 (2019-07-05)
+# Platform: x86_64-apple-darwin15.6.0 (64-bit)
+# Running under: macOS High Sierra 10.13.6
+
+pacman::p_load(tidyverse, magrittr, dplyr, ggplot2, GGally, patchwork, MCMCglmm, brms, janitor)
+```
+
+## Read in combined data
+
+```{r data}
+data <- read.csv("data/processed/data_for_analysis.csv", stringsAsFactors = F)
+data_long <- read.csv("data/processed/data_long_analysis.csv", stringsAsFactors = F)
+data_all <- read.csv("data/processed/data_allvars.csv") #for descirptive stats calculations
+
+str(data)
+head(data)
+
+str(data_long)
+head(data_long)
+
+str(data_all)
+head(data_all)
+```
+
+## Fix NA sex
+```{r}
+# data %>% filter(is.na(sex))
+# data %>% filter(sex == "I")
+# data %>% filter(sex == "F")
+# data %>% filter(sex == "M")
+data %<>% mutate(sex = ifelse(is.na(sex), "I", data$sex))
+data_long %<>% mutate(sex = ifelse(is.na(sex), "I", data$sex))
+```
+
+## 1) Descriptive stats: What are the overall trait means and variances? 
+
+```{r}
+data_all %>% select(poke_score, tot_prey_attack, Tactive) %>% summary()
+
+data_all %>% select(poke_score, tot_prey_attack, Tactive) %>% 
+  summarise(mu_poke = mean(poke_score, na.rm = T),
+            mu_tot_prey_attack = mean(tot_prey_attack, na.rm = T),
+            mu_Tactive = mean(Tactive, na.rm = T))
+
+data_all %>% select(poke_score, tot_prey_attack, Tactive) %>% 
+  summarise(sd_poke = sd(poke_score, na.rm = T),
+            sd_tot_prey_attack = sd(tot_prey_attack, na.rm = T),
+            sd_Tactive = sd(Tactive, na.rm = T))
+```
+
+### How many measures for each trait for each individual
+```{r}
+data_long %>% group_by(spider_id) %>% summarise(n = length(spider_id)) %>% as.data.frame() # 6 is good
+```
+
+##  2)  Are traits overall repeatable?
+Need to use data_long for these analyses not data! Can only do with traits with more than 2 data points per ID. Can't do for percent movement. 
+
+Yees traits are overall moderately repeatable irrespective of urban site type (i.e spiders exhibit 'personalities' and individuals consistenly differ in how their behave (poke and Tactive only))
+
+```{r}
+mod.1 <- brm(z_poke_score ~ sex + site_type + z_days_noweb + (1|spider_id),
+    family = gaussian(),
+    data = data_long, 
+    chains = 4, cores = 2, iter = 6500, thin = 4, warmup = 1500, 
+    control = list(adapt_delta = 0.99))
+
+plot(mod.1)
+summary(mod.1)
+
+mod.2 <- brm(z_Tactive ~ sex + site_type + z_days_noweb + (1|spider_id),
+    family = gaussian(),
+    data = data_long, 
+    chains = 4, cores = 2, iter = 5500, thin = 4, warmup = 1500, 
+    control = list(adapt_delta = 0.98))
+
+summary(mod.2)
+```
+
+### MCMCglmm model 
+```{r}
+# Set up priors for model and configure model
+prior <- list(G = list(G1 =list(V = 1, nu = 0.0002)),
+              R = list(V = 1, nu = 0.002))
+
+nitt = 553000
+burnin = 3000
+thin = 200
+
+mod.1 <- MCMCglmm(z_poke_score ~ sex + site_type + z_days_noweb + z_ln_weight,
+                  random = ~spider_id,
+                  prior = prior,
+                  nitt = nitt,
+                  burnin = burnin,
+                  thin = thin,
+                  data = data_long, 
+                  verbose = T)
+         
+saveRDS(mod.1, "output/rds/mod.1")
+mod.1 <- readRDS("output/rds/mod.1")
+plot(mod.1)
+summary(mod.1)
+
+#Repeatabilty of poke score is calculated as:
+#Point estimate
+0.2286/(0.2286+0.7592) #Pretty moderately repeatable
+poke_score_rep <- mod.1$VCV[,"spider_id"]/(mod.1$VCV[,"spider_id"] + mod.1$VCV[,"units"]) 
+posterior_summary(poke_score_rep) #Point estimate and credible intervals
+
+mod.2 <- MCMCglmm(z_ln_Tactive_lab ~ sex + site_type + z_days_noweb + z_ln_weight,
+                  random = ~spider_id,
+                  prior = prior,
+                  nitt = nitt,
+                  burnin = burnin,
+                  thin = thin,
+                  data = data_long, 
+                  verbose = T)
+
+saveRDS(mod.2, "output/rds/mod.2")
+mod.2 <- readRDS("output/rds/mod.2")
+plot(mod.2)
+summary(mod.2)
+
+#Repeatability of Tactive is calculated as: 
+Tactive_score_rep <- mod.2$VCV[,"spider_id"]/(mod.2$VCV[,"spider_id"] + mod.2$VCV[,"units"]) 
+posterior_summary(Tactive_score_rep) #Point estimate and credible intervals
+
+```
+
+## 3) Does repeatability vary with site categories? 
+Subset data and run models
+Credible intervals all overlap, but maybe sub urban is a bit more variable
+```{r}
+#How much data for each site category?
+data_long %>% filter(site_type == "Rural") %>% nrow()
+data_long %>% filter(site_type == "Sub urban") %>% nrow()
+data_long %>% filter(site_type == "Urban") %>% nrow()
+
+rural_data_long <- data_long %>% filter(site_type == "Rural")
+sub_data_long <- data_long %>% filter(site_type == "Sub urban")
+urb_data_long <- data_long %>% filter(site_type == "Urban") 
+
+#Poke score
+mod.1_rural <- MCMCglmm(z_poke_score ~ sex  + z_days_noweb + z_ln_weight,
+                        random = ~spider_id,
+                        prior = prior,
+                        nitt = nitt,
+                        burnin = burnin,
+                        thin = thin,
+                        data = rural_data_long, 
+                        verbose = T)
+
+saveRDS(mod.1_rural, "output/rds/mod.1_rural")
+mod.1_rural <- readRDS("output/rds/mod.1_rural")
+plot(mod.1_rural)
+summary(mod.1_rural)
+
+rural_poke_score_rep <- mod.1_rural$VCV[,"spider_id"]/(mod.1_rural$VCV[,"spider_id"] + mod.1_rural$VCV[,"units"]) 
+posterior_summary(rural_poke_score_rep) #Point estimate and credible intervals
+
+mod.1_sub <- MCMCglmm(z_poke_score ~ sex  + z_days_noweb + z_ln_weight,
+                        random = ~spider_id,
+                        prior = prior,
+                        nitt = nitt,
+                        burnin = burnin,
+                        thin = thin,
+                        data = sub_data_long, 
+                        verbose = F)
+
+saveRDS(mod.1_sub, "output/rds/mod.1_sub")
+mod.1_sub <- readRDS("output/rds/mod.1_sub")
+plot(mod.1_sub)
+summary(mod.1_sub)
+
+sub_poke_score_rep <- mod.1_sub$VCV[,"spider_id"]/(mod.1_sub$VCV[,"spider_id"] + mod.1_sub$VCV[,"units"]) 
+posterior_summary(sub_poke_score_rep) #Point estimate and credible intervals
+
+mod.1_urb <- MCMCglmm(z_poke_score ~ sex  + z_days_noweb + z_ln_weight,
+                        random = ~spider_id,
+                        prior = prior,
+                        nitt = nitt,
+                        burnin = burnin,
+                        thin = thin,
+                        data = urb_data_long, 
+                        verbose = T)
+
+saveRDS(mod.1_urb, "output/rds/mod.1_urb")
+mod.1_urb <- readRDS("output/rds/mod.1_urb")
+plot(mod.1_urb)
+summary(mod.1_urb)
+
+urb_poke_score_rep <- mod.1_urb$VCV[,"spider_id"]/(mod.1_urb$VCV[,"spider_id"] + mod.1_urb$VCV[,"units"]) 
+posterior_summary(urb_poke_score_rep) #Point estimate and credible intervals
+
+#Tactive
+mod.2_rural <- MCMCglmm(z_ln_Tactive_lab ~ sex + z_days_noweb + z_ln_weight,
+                  random = ~spider_id,
+                  prior = prior,
+                  nitt = nitt,
+                  burnin = burnin,
+                  thin = thin,
+                  data = rural_data_long, 
+                  verbose = F)
+
+saveRDS(mod.2_rural, "output/rds/mod.2_rural")
+mod.2_rural <- readRDS("output/rds/mod.2_rural")
+plot(mod.2_rural)
+summary(mod.2_rural)
+
+rural_Tactive_score_rep <- mod.2_rural$VCV[,"spider_id"]/(mod.2_rural$VCV[,"spider_id"] + mod.2_rural$VCV[,"units"]) posterior_summary(rural_Tactive_score_rep) #Point estimate and credible intervals
+
+mod.2_sub <- MCMCglmm(z_ln_Tactive_lab ~ sex + z_days_noweb + z_ln_weight,
+                  random = ~spider_id,
+                  prior = prior,
+                  nitt = nitt,
+                  burnin = burnin,
+                  thin = thin,
+                  data = sub_data_long, 
+                  verbose = F)
+
+saveRDS(mod.2_sub, "output/rds/mod.2_sub")
+mod.2_sub <- readRDS("output/rds/mod.2_sub")
+plot(mod.2_sub)
+summary(mod.2_sub)
+
+sub_Tactive_score_rep <- mod.2_sub$VCV[,"spider_id"]/(mod.2_sub$VCV[,"spider_id"] + mod.2_sub$VCV[,"units"]) 
+posterior_summary(sub_Tactive_score_rep) #Point estimate and credible intervals
+
+mod.2_urb <- MCMCglmm(z_ln_Tactive_lab ~ sex + z_days_noweb + z_ln_weight,
+                  random = ~spider_id,
+                  prior = prior,
+                  nitt = nitt,
+                  burnin = burnin,
+                  thin = thin,
+                  data = urb_data_long, 
+                  verbose = F)
+
+saveRDS(mod.2_urb, "output/rds/mod.2_urb")
+mod.2_urb <- readRDS("output/rds/mod.2_urb")
+plot(mod.2_urb)
+summary(mod.2_urb)
+
+urb_Tactive_score_rep <- mod.2_urb$VCV[,"spider_id"]/(mod.2_urb$VCV[,"spider_id"] + mod.2_urb$VCV[,"units"]) 
+posterior_summary(urb_Tactive_score_rep) #Point estimate and credible intervals
+```
+
+
+## 4) Are there differences in means trait values between site categories? 
+Intercept = Rural
+Releveled to get Intercept = Urban to get Suburban vs Urban constrast
+No there are no differences in poke scores among site types
+
+```{r}
+summary(mod.1) #No diff with Rural vs Suburban, Rural vs Urban in poke score
+summary(mod.2) #No diff with Rural vs Suburban, Rural vs Urban in Tactive
+
+data_long %<>% mutate(site_type = as.factor(site_type))
+
+#Relevel model with Urban as intercept
+mod.1.5 <- MCMCglmm(z_poke_score ~ sex + relevel(site_type, ref = "Urban") + z_days_noweb + z_ln_weight,
+                  random = ~spider_id,
+                  prior = prior,
+                  nitt = nitt,
+                  burnin = burnin,
+                  thin = thin,
+                  data = data_long, 
+                  verbose = F)
+
+saveRDS(mod.1.5, "output/rds/mod.1.5")
+mod.1.5 <- readRDS("output/rds/mod.1.5")
+
+plot(mod.1.5)
+summary(mod.1.5)
+
+mod.2.5 <- MCMCglmm(z_ln_Tactive_lab ~ sex + relevel(site_type, ref = "Urban") + z_days_noweb + z_ln_weight,
+                  random = ~spider_id,
+                  prior = prior,
+                  nitt = nitt,
+                  burnin = burnin,
+                  thin = thin,
+                  data = data_long, 
+                  verbose = F)
+
+saveRDS(mod.2.5, "output/rds/mod.2.5")
+mod.2.5 <- readRDS("output/rds/mod.2.5")
+
+plot(mod.2.5)
+summary(mod.2.5)
+```
+
+## 5) Does trait means change along urban index 
+No signficant relationship with poke score along landscape index
+Time active decreases along as landscape index increases (i.e. Total population increases) #moderately significant
+
+```{r}
+mod.3 <- MCMCglmm(z_ln_Tactive_lab ~ sex + landPC1 + z_days_noweb  + z_ln_weight,
+                  random = ~spider_id,
+                  prior = prior,
+                  nitt = nitt,
+                  burnin = burnin,
+                  thin = thin,
+                  data = data_long, 
+                  verbose = F)
+
+saveRDS(mod.3, "output/rds/mod.3")
+mod.3 <- readRDS("output/rds/mod.3")
+
+plot(mod.3)
+summary(mod.3)
+
+mod.4 <- MCMCglmm(z_poke_score ~ sex + landPC1 + z_days_noweb + z_ln_weight,
+                  random = ~spider_id,
+                  prior = prior,
+                  nitt = nitt,
+                  burnin = burnin,
+                  thin = thin,
+                  data = data_long, 
+                  verbose = F)
+
+saveRDS(mod.4, "output/rds/mod.4")
+mod.4 <- readRDS("output/rds/mod.4")
+
+plot(mod.4)
+summary(mod.4)
+```
+
+## 6) Does trait means change along microhabitat index 
+Neither traits varied with microhabitat index, coefficient is positive for poke score and negative for Tactive
+
+```{r}
+mod.5 <- MCMCglmm(z_ln_Tactive_lab ~ sex + mh_pc1 + z_days_noweb + z_ln_weight,
+                  random = ~spider_id,
+                  prior = prior,
+                  nitt = nitt,
+                  burnin = burnin,
+                  thin = thin,
+                  data = data_long, 
+                  verbose = F)
+
+saveRDS(mod.5, "output/rds/mod.5")
+plot(mod.5)
+summary(mod.5)
+
+mod.6 <- MCMCglmm(z_poke_score ~ sex + mh_pc1 + z_days_noweb + z_ln_weight,
+                  random = ~spider_id,
+                  prior = prior,
+                  nitt = nitt,
+                  burnin = burnin,
+                  thin = thin,
+                  data = data_long, 
+                  verbose = F)
+
+saveRDS(mod.6, "output/rds/mod.6")
+
+plot(mod.6)
+summary(mod.6)
+
+
+```
+
+## 7) Difference with field and lab
+```{r}
+names(data)
+data %>% filter(in_situ == 0) %>% nrow()
+data %>% filter(in_situ == 1) %>% nrow()
+
+#Poke
+complete_poke <- data[complete.cases(data$z_poke_score),]
+nrow(complete_poke)
+
+mod.7 <- glm(z_poke_score ~ sex + in_situ + z_ln_weight, data = complete_poke)
+summary(mod.7)
+
+#Tactive
+complete_Tactive <- data[complete.cases(data$z_ln_Tactive),]
+nrow(complete_Tactive)
+summary(complete_Tactive)
+
+mod.8 <- glm(z_ln_Tactive ~ sex + z_ln_weight, data = complete_Tactive)
+summary(mod.8)
+```
+
+## 8) Differences in traits with site types that were only measured once
+```{r}
+#Prey attacked
+complete_prey <- data[complete.cases(data$z_ln_tot_prey_attack),]
+nrow(complete_prey)
+summary(complete_prey)
+
+mod.9 <- glm(z_ln_tot_prey_attack ~ sex + site_type + z_ln_weight, data = complete_prey)
+summary(mod.9)
+```
+
+## 9) Do these traits on average change with microhab? Irrespective of ID variation essentially
+
+```{r}
+#Prey attacked
+mod.10 <- glm(z_ln_tot_prey_attack ~ sex + landPC1 + z_ln_weight, data = complete_prey)
+summary(mod.10)
+
+#Tactive
+mod.11 <- glm(z_ln_Tactive ~ sex + landPC1 + z_ln_weight, data = complete_Tactive)
+summary(mod.11)
+
+#Poke
+mod.12 <- glm(z_poke_score ~ sex + landPC1 + z_ln_weight, data = complete_poke)
+summary(mod.12)
+```
+
+## 10) Do these traits on average change with landscape? Irrespective of ID variation essentially
+
+```{r}
+#Prey attacked
+mod.13 <- glm(z_ln_tot_prey_attack ~ sex + mh_pc1 + z_ln_weight, data = complete_prey)
+summary(mod.13)
+
+#Tactive
+mod.14 <- glm(z_ln_Tactive ~ sex + mh_pc1 + z_ln_weight, data = complete_Tactive)
+summary(mod.14)
+
+#Poke
+mod.15 <- glm(z_poke_score ~ sex + mh_pc1 + z_ln_weight, data = complete_poke)
+summary(mod.15)
+```
+
+## 11) Correlations in traits at the population level among urban categories
+```{r}
+names(data)
+
+data %>% filter(site_type == "Rural") %>% nrow()
+data %>% filter(site_type == "Sub urban") %>% nrow()
+data %>% filter(site_type == "Urban") %>% nrow()
+
+data %>% select(c(z_poke_score, z_ln_tot_prey_attack, z_ln_Tactive))
+
+mod.16 <- brm(mvbind(z_poke_score, z_ln_tot_prey_attack, z_ln_Tactive) ~ sex + z_ln_weight + (1|s|site_type), 
+                   data = data,
+              control = list(adapt_delta = 0.99),
+              chains = 4, cores = 2, iter = 6500, thin = 4, warmup = 1500)
+
+saveRDS(mod.16, "output/rds/mod.16")
+
+summary(mod.16)
+posterior_summary(mod.16)
+```
+

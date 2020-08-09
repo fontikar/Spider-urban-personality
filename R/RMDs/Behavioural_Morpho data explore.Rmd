@@ -1,0 +1,551 @@
+---
+title: "Behavioural data explore"
+author: "Fonti Kar"
+date: "9/3/2019"
+output: 
+  html_document:
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc: true
+    error: false
+    warning: false
+    message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, include = T)
+rm(list=ls())
+sessionInfo()
+# R version 3.6.1 (2019-07-05)
+# Platform: x86_64-apple-darwin15.6.0 (64-bit)
+# Running under: macOS High Sierra 10.13.6
+
+pacman::p_load(tidyverse, magrittr, dplyr, janitor, ggplot2, GGally, patchwork)
+```
+
+## Read in behavioural data
+
+```{r data }
+behavedat <- read.csv("~/Dropbox/Collaborations/1 - Spider_urban_personality/data/behave_dat.csv")
+str(behavedat)
+```
+
+## Read in morphological data
+
+```{r data_2}
+morphdat <- read.csv("~/Dropbox/Collaborations/1 - Spider_urban_personality/data/morph_dat.csv")
+str(morphdat)
+```
+
+## Tidying up some variable names in behavedat
+Field vs Lab, which ones are 'synonymous' with lab ones?
+
+What is the difference between simulated predator attack is this poke or dist
+What is the difference squares explored 1 and 2?
+What is the difference % area 1 and 2?
+What is the difference dis travelled 1 and 2? 
+Are they trial 1 and 2? 
+
+"Time spent moving was highly correlated with the other two measures (area explored: r=0.77, n=158, p<0.001, distance travelled: r=0.86, n=156, p<0.001) so only this measure was retained for further analysis"
+
+"This trial was conducted for each spider on day 7 and day 13 to test for repeatability of behaviour." 
+
+```{r}
+names(behavedat)
+#  [1] "Spider.name"               "Site"                      "Site.category"            
+#  [4] "time.spent.active"         "time.till.1st.stop"        "X..moves.in.5.min"        
+#  [7] "Field.behav..score"        "X..days.without.web"       "X1st.lab.dist."           
+# [10] "X2nd.lab.dist."            "X3rd.lab.dist."            "X4th.lab.dist."           
+# [13] "X5th.lab.dist."            "X6th.lab.dist."            "X1st.lab.poke"            
+# [16] "X2nd.lab.poke"             "X3rd.lab.poke"             "X4th.lab.poke"            
+# [19] "X5th.lab.poke"             "X6th.lab.poke"             "Total.prey.attacked"      
+# [22] "Small.remains"             "Large.remains"             "Flies.not.eaten"          
+# [25] "Flies.left.in.web"         "Time.spent.moving...."     "Distance.travelled..mm."  
+# [28] "Squares.explored"          "Area.explored...."         "Time.spent.moving.....2"  
+# [31] "Distance.travelled..mm..2" "Squares.explored.2"        "Area.explored.....2"  
+
+# behavedat %>% rename(Spider.id = Spider.name,
+#                     Urban_type = Site.category,
+#                      active_novel = time.spent.active,
+#                      field_poke = Field.behav..score,
+#                      days_no_web  = X..days.without.web,
+#                      percent_time_spent_moving_novel  = Time.spent.moving...,
+#                      dist_travelled = Distance.travelled..mm.,
+#                      squares_explored =  Squares.explored.2,
+#                      habscale_rocks_sticks = rocks.per.sticks)
+
+head(behavedat)
+```
+
+## Having a look in morphandat
+What are the different maturity catergories? How to deal with these? 
+What do to with I in sex
+What is Mean red, mode and sd? Brightness? Hue? Can we make any predictions using these? If no straightforward ones I suggest dropping.
+
+I suggest taking average weight
+
+```{r}
+names(morphdat)
+  
+head(morphdat)
+summary(morphdat)
+```
+
+## Correlation among morphological traits
+Can we just choose one or a composite of two? PCA I don't recommend they become unitless
+For example in lizards we do - body condition which is the residuals from the relationship between mass and body length 
+
+```{r}
+ggcorr(morphdat %>% select(Weight.Day.1:SD.red), palette = "RdBu", label = TRUE, hjust = 0.75, size = 3, layout.exp = 1)
+
+#Yep, morphological traits SUPER correlated so I suggest deriving a body condition measure or just take mean weight
+```
+
+## Scatterplot matrix of morphological traits
+Visualise the distributions to see if there are any red flags
+```{r}
+ggpairs(morphdat %>% select(Weight.Day.1:SD.red))
+
+#Looks like whatever morphological trait we choose, we should log due to skewed distribution
+```
+
+##Scatterplot matrix between variables within each 'trait' catergory
+
+-Within superflous killing, which vars are correlated? Can we just take one?
+Most traits are positively correlated and tot prey attacked is negatively correlated with flies in web, which makes sense right? 
+
+-Novel environment traits
+All super correlated and some have bang on r = 1??? Which is suspicious. These are Squares explored and area explored
+-Overall all very correlated among traits, I suggest using time spent moving, its straightforward and easy to understand
+
+
+```{r}
+#Superflous killing - 
+ggpairs(behavedat %>% select(Total.prey.attacked:Flies.left.in.web))
+
+#Novel environment lab
+ggpairs(behavedat %>% select(Time.spent.moving....:Area.explored.....2))
+```
+
+## Covariates e.g. body mass, sex, the relationship of these variables with behave and morphology
+Need to first relate all the data via Spider.ID first
+
+Yep there are sex differences in morphology and behaviour
+
+```{r}
+behavedat$Spider.name %>% unique() == morphdat$Spider.name %>% unique()
+
+behavemorphdat <- left_join(behavedat, morphdat)
+
+sex_1 <- ggplot(behavemorphdat, aes(x = Sex, y = Weight.Day.1)) +
+  geom_boxplot()
+
+sex_2 <- ggplot(behavemorphdat, aes(x = Sex, y = time.spent.active)) +
+  geom_boxplot()
+
+sex_3 <- ggplot(behavemorphdat, aes(x = Sex, y = Total.prey.attacked)) +
+  geom_boxplot()
+
+sex_4 <- ggplot(behavemorphdat, aes(x = Sex, y = Time.spent.moving.... )) +
+  geom_boxplot()
+
+sex_1 + sex_2 + sex_3 + sex_4 + plot_layout(ncol = 2) #NA to treat as I? 
+
+```
+
+## How do traits vary with maturity?
+Doesn't look so bad, especially if we are log transforming some of these
+
+```{r}
+mat_1 <- ggplot(behavemorphdat, aes(x = Maturity, y = Weight.Day.1)) +
+  geom_boxplot()
+
+mat_2 <- ggplot(behavemorphdat, aes(x = Maturity, y = time.spent.active)) +
+  geom_boxplot()
+
+mat_3 <- ggplot(behavemorphdat, aes(x = Maturity, y = Total.prey.attacked)) +
+  geom_boxplot()
+
+mat_4 <- ggplot(behavemorphdat, aes(x = Maturity, y = Time.spent.moving.... )) +
+  geom_boxplot()
+
+mat_1 + mat_2 + mat_3 + mat_4 + plot_layout(ncol = 2)
+```
+
+##Predictor:What is the relationship of these traits with urban category
+
+By eye its not that crazy different, differences in variance though for sure, need to verify after log-transforming
+
+```{r}
+site_1 <- ggplot(behavemorphdat, aes(x = Site.category , y = Weight.Day.1)) +
+  geom_boxplot()
+
+site_2 <- ggplot(behavemorphdat, aes(x = Site.category, y = time.spent.active)) +
+  geom_boxplot()
+
+site_3 <- ggplot(behavemorphdat, aes(x = Site.category, y = Total.prey.attacked)) +
+  geom_boxplot()
+
+site_4 <- ggplot(behavemorphdat, aes(x = Site.category, y = Time.spent.moving.... )) +
+  geom_boxplot()
+
+site_1 + site_2 + site_3 + site_4 + plot_layout(ncol = 2)
+```
+
+##Rename some variables and select the ones I need
+
+```{r}
+names(behavemorphdat)
+head(behavemorphdat)
+
+behavemorphdat %<>% rename(spider_id = Spider.name,
+                          site = Site,
+                          site_type = Site.category,
+                          sex = Sex,
+                          weight = Weight.Day.1,
+                          Tactive_field = time.spent.active,
+                          T_stop_field = time.till.1st.stop,
+                          num_moves_field = X..moves.in.5.min,
+                          poke_field = Field.behav..score,
+                          days_noweb_lab = X..days.without.web,
+                          poke_1_lab = X1st.lab.poke,
+                          poke_2_lab = X2nd.lab.poke,
+                          poke_3_lab = X3rd.lab.poke,
+                          poke_4_lab = X4th.lab.poke,
+                          poke_5_lab = X5th.lab.poke,
+                          poke_6_lab = X6th.lab.poke,
+                          tot_prey_attack = Total.prey.attacked,
+                          percent_time_moving_1_lab = Time.spent.moving....,
+                          percent_time_moving_2_lab = Time.spent.moving.....2)
+
+#Select variables I need
+data <- behavemorphdat %>% dplyr::select(spider_id,
+                                  site,
+                                  site_type,
+                                  sex,
+                                  weight,
+                                  Tactive_field,
+                                  T_stop_field,
+                                  num_moves_field,
+                                  poke_field,
+                                  days_noweb_lab,
+                                  poke_1_lab,
+                                  poke_2_lab,
+                                  poke_3_lab,
+                                  poke_4_lab,
+                                  poke_5_lab,
+                                  poke_6_lab,
+                                  tot_prey_attack,
+                                  percent_time_moving_1_lab, 
+                                  percent_time_moving_2_lab)
+
+str(data)
+
+#Exclude one Urban lizard with 0 mass
+data %<>% filter(!spider_id == "L04")
+```
+
+## Split by field and lab
+```{r}
+lab_data <- data %>% dplyr::select(spider_id:weight, ends_with("_lab"), tot_prey_attack, percent_time_moving_1_lab, percent_time_moving_2_lab)
+str(lab_data)
+head(lab_data)
+
+field_data <- data %>% dplyr::select(spider_id:weight, ends_with("_field"))
+str(field_data)
+head(field_data)
+```
+
+## Lab wide to long
+```{r}
+str(lab_data)
+head(lab_data)
+
+#Take the pokes only so we can change the format
+poke_data <- lab_data %>% dplyr::select(spider_id:days_noweb_lab, starts_with("poke"))
+head(poke_data)
+
+active_data <- lab_data %>% dplyr::select(spider_id:days_noweb_lab, starts_with("percent"))
+head(active_data)
+
+#Change to long format with poke number as "trial number"
+poke_data_long <- poke_data %>% gather(key = "trial_num",
+                                       value = "poke_score",
+                                       starts_with("poke"))
+
+active_data_long <- active_data %>% gather(key = "trial_num",
+                                         value = "percent_time_moving",
+                                         starts_with("percent"))
+
+#Change the numbering of pokes
+poke_data_long %<>% mutate(trial_num = ifelse(trial_num == "poke_1_lab", 1, 
+                                             ifelse(trial_num == "poke_2_lab", 2,
+                                                    ifelse(trial_num == "poke_3_lab", 3,
+                                                           ifelse(trial_num == "poke_4_lab", 4,
+                                                                  ifelse(trial_num == "poke_5_lab", 5,
+                                                                         ifelse(trial_num == "poke_6_lab", 6, NA))))))) 
+
+str(poke_data_long)
+
+#Change the numbering of percent
+active_data_long %<>% mutate(trial_num = ifelse(trial_num == "percent_time_moving_1_lab", 1, 
+                                             ifelse(trial_num == "percent_time_moving_2_lab", 2, NA))) 
+str(active_data_long)
+
+#Merge back with other lab variables
+other_lab_vars <- lab_data %>% dplyr::select(spider_id, tot_prey_attack)
+
+behave_long <- left_join(poke_data_long, active_data_long)
+
+lab_data_long <- left_join(behave_long, other_lab_vars) 
+
+str(lab_data_long)
+```
+
+## Lab explore
+Overall, there was weaker correlation in poke scores across days/trials.
+Raw data looks a bit messy to know if poke score is repeatable overall, and differences between site is hard to tell but loks like there is some differences. Rural looks messier than say sub and urb. Less high scores for sub.
+```{r}
+str(lab_data_long)
+head(lab_data_long)
+
+str(lab_data)
+head(lab_data)
+
+#Correlations in poke score across trials
+ggpairs(lab_data %>% select(starts_with("poke"))) 
+
+#Are there consistent individual differences in poke score? A bit messy to know...
+ggplot(lab_data_long, aes(x = trial_num, y = poke_score)) + 
+  geom_point() + 
+  geom_line(aes(group = spider_id, colour = spider_id)) + 
+  #facet_wrap(~site_type) + 
+  theme(legend.position = "none")
+
+ggplot(lab_data_long, aes(x = trial_num, y = poke_score)) + 
+  geom_point() + 
+  geom_line(aes(group = spider_id, colour = spider_id)) + 
+  facet_wrap(~site_type) + 
+  theme(legend.position = "none")
+```
+
+## Do some log transformations or create average variables
+
+```{r}
+#Calculate mean poke score
+lab_data %<>% group_by(spider_id) %>% mutate(mean_poke_lab = mean(c(poke_1_lab, poke_2_lab, 
+                                                                   poke_3_lab, poke_4_lab,
+                                                                   poke_5_lab, poke_6_lab), na.rm = T)) %>% as.data.frame()
+
+#Calculate percent time active
+lab_data %<>% group_by(spider_id) %>% mutate(mean_percent_time_moving = mean(c(percent_time_moving_1_lab, percent_time_moving_2_lab, na.rm = T))) %>% as.data.frame()
+
+
+#Back calculate Time spent active from percentage of 10 mins
+lab_data %<>% mutate(mean_Tactive_lab = ((mean_percent_time_moving/100)*(600)))
+lab_data_long %<>% mutate(Tactive_lab = ((percent_time_moving/100)*(600)))
+                    
+#Distributions
+hist(lab_data$mean_poke_lab)
+hist(lab_data$weight)
+hist(lab_data$tot_prey_attack)
+hist(lab_data$Tactive_lab)
+
+#Transform weight, tot_prey_attack and percent time moving
+lab_data %<>% mutate(ln_weight = log(weight),
+                     ln_tot_prey_attack = log(tot_prey_attack + 0.5),
+                     ln_Tactive_lab = log(mean_Tactive_lab + 0.5))
+
+lab_data_long %<>% mutate(ln_weight = log(weight),
+                          ln_poke_score = log(poke_score + 0.5),
+                          ln_tot_prey_attack = log(tot_prey_attack + 0.5),
+                          ln_Tactive_lab = log(Tactive_lab + 0.5))
+
+summary(lab_data)
+summary(lab_data_long)
+
+#Correlations among traits
+lab_trait_cor_1 <- ggplot(lab_data, aes(x = mean_poke_lab, y = ln_tot_prey_attack)) + 
+  geom_point() +   
+  facet_wrap(~site_type) + 
+  stat_smooth(method = "lm")
+
+lab_trait_cor_2 <- ggplot(lab_data, aes(x = mean_poke_lab, y = ln_Tactive_lab)) + 
+  geom_point() + 
+  facet_wrap(~site_type) + 
+  stat_smooth(method = "lm")
+
+lab_trait_cor_3 <- ggplot(lab_data, aes(x = ln_tot_prey_attack, y = ln_Tactive_lab)) + 
+  geom_point() + 
+  facet_wrap(~site_type) + 
+  stat_smooth(method = "lm")
+
+plot_layout(lab_trait_cor_1 + lab_trait_cor_2 + lab_trait_cor_3)
+
+#Correlation with weight
+lab_weighttrait_cor_1 <- ggplot(lab_data, aes(x = ln_weight, y = mean_poke_lab)) + 
+  geom_point() + 
+  facet_wrap(~site_type) + 
+  stat_smooth(method = "lm")
+
+lab_weighttrait_cor_2 <- ggplot(lab_data, aes(x = ln_weight, y = ln_Tactive_lab)) + 
+  geom_point() + 
+  facet_wrap(~site_type) + 
+  stat_smooth(method = "lm")
+
+lab_weighttrait_cor_3 <- ggplot(lab_data, aes(x = ln_weight, y = ln_tot_prey_attack)) + 
+  geom_point() + 
+  facet_wrap(~site_type) + 
+  stat_smooth(method = "lm")
+
+plot_layout(lab_weighttrait_cor_1 + lab_weighttrait_cor_2 + lab_weighttrait_cor_3)
+
+#Correlation with days no web
+ggplot(lab_data, aes(x = days_noweb_lab, y = ln_weight)) + 
+  geom_point() + 
+  #facet_wrap(~site_type) + 
+  stat_smooth(method = "lm")
+
+ggplot(lab_data, aes(x = days_noweb_lab, y = ln_tot_prey_attack)) + 
+  geom_point() + 
+  #facet_wrap(~site_type) + 
+  stat_smooth(method = "lm")
+
+ggplot(lab_data, aes(x = days_noweb_lab, y = ln_Tactive_lab)) + 
+  geom_point() + 
+  #facet_wrap(~site_type) + 
+  stat_smooth(method = "lm")
+
+ggplot(lab_data, aes(x = days_noweb_lab, y = mean_poke_lab)) + 
+  geom_point() + 
+  #facet_wrap(~site_type) + 
+  stat_smooth(method = "lm")
+```
+
+#How many measures per individual and coverage of data (how much is missing)
+```{r}
+tabyl(lab_data$spider_id) #1 for %percent time moving and %tot prey attack
+
+#Coverage of data
+tabyl(is.na(lab_data$tot_prey_attack)) #pretty low
+tabyl(is.na(lab_data$ln_Tactive_lab))
+tabyl(is.na(lab_data$mean_poke_lab))
+```
+
+## Do some z-transformations so everything is on the same scale 
+```{r}
+lab_data %<>% mutate(z_ln_weight = c(scale(ln_weight)),
+                     z_mean_poke_lab = c(scale(mean_poke_lab)),
+                     z_ln_tot_prey_attack = c(scale(tot_prey_attack)), 
+                     z_ln_Tactive_lab = c(scale(ln_Tactive_lab)),
+                     in_situ = 0,
+                     z_days_noweb = c(scale(days_noweb_lab)))
+
+
+lab_data_long %<>% mutate(z_ln_weight = c(scale(ln_weight)),
+                          z_poke_score = c(scale(poke_score)),
+                          z_ln_tot_prey_attack = c(scale(ln_tot_prey_attack)),
+                          z_ln_Tactive_lab = c(scale(ln_Tactive_lab)),
+                          in_situ = 0, 
+                          z_days_noweb = c(scale(days_noweb_lab)))
+
+str(lab_data) ; str(lab_data_long)
+```
+
+#Field data
+```{r}
+str(field_data)
+head(field_data)
+
+#Distributions
+hist(field_data$Tactive_field)
+hist(field_data$T_stop_field)
+hist(field_data$num_moves_field)
+hist(field_data$poke_field)
+
+#Log and z transformations
+field_data %<>% mutate(ln_weight = log(weight),
+                       ln_Tactive_field = log(Tactive_field + 0.5),
+                      z_ln_weight = scale(ln_weight),
+                      z_ln_Tactive_field = scale(ln_Tactive_field),
+                      z_poke_field = scale(poke_field),
+                      in_situ  = 1)
+
+#Correlations among traits and mass in field by site
+ggplot(field_data, aes(x = ln_Tactive_field, y = ln_poke_field)) + 
+  facet_wrap(~site_type) + 
+  stat_smooth(method = "lm")
+
+ggplot(field_data, aes(x = ln_weight, y = ln_poke_field)) + 
+  geom_point() + 
+  facet_wrap(~site_type) + 
+  stat_smooth(method = "lm")
+
+ggplot(field_data, aes(x = ln_weight, y = ln_Tactive_field)) + 
+  geom_point() + 
+  facet_wrap(~site_type) + 
+  stat_smooth(method = "lm")
+```
+
+## Merge field and lab data
+```{r}
+names(lab_data)
+names(field_data)
+
+#Select core variables
+lab_core <- lab_data %>% dplyr::select(spider_id:sex, starts_with("z"), in_situ)
+lab_core_long <- lab_data_long %>% dplyr::select(spider_id:sex, starts_with("z"), in_situ)
+field_core <- field_data %>% dplyr::select(spider_id:sex, starts_with("z"), in_situ)
+
+#Rename as the same
+names(lab_core)
+names(lab_core_long)
+names(field_core)
+
+lab_core %<>% rename(z_ln_Tactive = z_ln_Tactive_lab,
+                     z_poke_score = z_mean_poke_lab)
+
+lab_core_long %<>% rename(z_ln_Tactive = z_ln_Tactive_lab)
+
+field_core %<>% rename(z_ln_Tactive = z_ln_Tactive_field,
+                       z_poke_score = z_poke_field)
+
+#Rename in data as well
+lab_data %<>% rename(poke_score = mean_poke_lab,
+                     Tactive = mean_Tactive_lab,
+                     z_ln_Tactive = z_ln_Tactive_lab,
+                     z_poke_score = z_mean_poke_lab)
+
+lab_data_long %<>% rename(Tactive = Tactive_lab,
+                          z_ln_Tactive = z_ln_Tactive_lab)
+
+field_data  %<>% rename(poke_score = poke_field, 
+                        Tactive = Tactive_field, 
+                        z_ln_Tactive = z_ln_Tactive_field,
+                        z_poke_score = z_poke_field)
+
+
+#Merge or rbind depending ong wide or long (wide we can do cor, long we can compare)
+#Bind_rows
+nrow(lab_core) + nrow(field_core)
+nrow(lab_core_long) + nrow(field_core) 
+
+data_core <- bind_rows(lab_core, field_core) 
+raw_data <- bind_rows(lab_data, field_data) 
+```
+
+## Write the data file(s) 
+
+```{r}
+write.csv(lab_data, row.names = F, "data/processed/lab_data.csv")
+write.csv(lab_data_long, row.names = F, "data/processed/lab_data_long.csv")
+
+write.csv(field_data, row.names = F, "data/processed/field_data.csv")
+
+write.csv(data_core, row.names = F, "data/processed/data_core.csv")
+write.csv(raw_data,  row.names = F, "data/processed/data_allvars.csv" )
+```
+
+
+

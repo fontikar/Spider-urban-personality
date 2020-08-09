@@ -1,0 +1,145 @@
+---
+title: "Microhabitat PCA"
+author: "Fonti Kar"
+date: "8/27/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, include = T)
+rm(list=ls())
+sessionInfo()
+# R version 3.6.1 (2019-07-05)
+# Platform: x86_64-apple-darwin15.6.0 (64-bit)
+# Running under: macOS High Sierra 10.13.6
+
+pacman::p_load(tidyverse, magrittr, dplyr, ggplot2, GGally,MASS, psych, Matrix)
+```
+
+## Read in data
+
+```{r data read}
+microhabdat <- read.csv("data/microhab_dat.csv", stringsAsFactors = F)
+str(microhabdat)
+```
+
+## Tidying up some variable names
+
+```{r}
+microhabdat %<>% rename(spider_id = Spider.name,
+                        site = Site,
+                        site_type = urban.cat,
+                        habscale_0_50 = X0.50  ,
+                        habscale_50_100 = X50.100,
+                        habscale_100_200  = X100..200,
+                        habscale_canopycover  = Canopy.cover,
+                        habscale_habcomplex = Habitat.complexity,
+                        habscale_leaflitter = leaf.litter,
+                        habscale_rocks_sticks = rocks.per.sticks)
+
+head(microhabdat)
+
+#Exclude spider that had zero mass
+microhabdat %<>% filter(! spider_id == "L04")
+
+#Checking consistency across names and ids
+data_all$spider_id %>% unique() %>% sort() == microhabdat$spider_id %>% unique() %>% sort() 
+data_all$site %>% unique() %>% sort() == microhabdat$site %>% unique() %>% sort() 
+```
+
+##Subsetting the data we need
+```{r}
+microhabdat <- dplyr::select(microhabdat, spider_id, site, site_type, prop.vegetation:prop.hard.surface)
+```
+
+## Correcting Hoebeck's missing data
+
+```{r}
+microhabdat %>% filter(site == "Hoebeck")
+
+microhabdat %<>% mutate(prop.vegetation = ifelse(site == "Hoebeck", 100, prop.vegetation),
+                   prop.grass = ifelse(site == "Hoebeck", 0, prop.grass),
+                   prop.hard.surface = ifelse(site == "Hoebeck", 0, prop.hard.surface)) 
+```
+
+
+## Scatterplot matrix to show distributions
+```{r}
+microvars <- microhabdat %>% dplyr::select(starts_with("prop"))
+
+ggpairs(microvars, palette = "RdBu", label = TRUE, hjust = 0.75, size = 3, layout.exp = 1)
+
+microvars_cor <- cor(microvars)
+```
+
+## Do the PCA on microhabitat variables
+
+#Pre-diagnoses
+```{r}
+# Bartlett's test
+cortest.bartlett(microhabdat %>% dplyr::select(starts_with("prop")), n = nrow(microvars_cor))
+
+#Steiger's test
+cortest.mat(microhabdat %>% dplyr::select(starts_with("prop")), n1 = length(microvars_cor))
+ 
+# KMO(Kaiser-Meyer-Olkin)</span>
+KMO(microvars_cor)
+ 
+# Determinant
+det(microvars_cor)
+```
+
+#Do the PCA on scaled variables of the subset (no human variables)
+
+```{r}
+mh_pc1 = psych::principal(microhabdat %>% dplyr::select(starts_with("prop")), nfactors = 
+length(microhabdat %>% dplyr::select(starts_with("prop"))), rotate="varimax", scores = T)
+
+mh_pc1
+
+str(mh_pc1)
+
+#Biplot
+biplot(mh_pc1)
+
+#screen plot
+plot(mh_pc1$values, type ="b") 
+
+#health check
+mh_pc1$residual %>% plot
+mh_pc1$fit
+mh_pc1$communality 
+
+#Put these PC scores back into original dataframe but first check it matches number of data points to number of rows in data
+
+microhabdat$mh_pc1 <- mh_pc1$scores[,1] # strongly postively loaded on prop.grass  
+microhabdat %>% dplyr::select(site, site_type, mh_pc1)
+```
+
+#Merge in with data_all
+```{r}
+data_all <- read.csv("data/processed/data_all.csv", stringsAsFactors = F)
+str(data_all)
+
+head(microhabdat)
+
+data_for_analysis <- left_join(data_all, microhabdat %>% dplyr::select(spider_id, mh_pc1))
+
+write.csv(data_for_analysis, row.names = F, "data/processed/data_for_analysis.csv")
+```
+
+## Merge in with data_long_all
+
+```{r}
+data_long_all <- read.csv("data/processed/lab_data_long_all.csv", stringsAsFactors = F)
+str(data_long_all)
+
+head(microhabdat)
+
+data_long_analysis <- left_join(data_long_all, microhabdat %>% dplyr::select(spider_id, mh_pc1))
+
+str(data_for_analysis)
+
+write.csv(data_long_analysis, row.names = F, "data/processed/data_long_analysis.csv")
+```
+

@@ -1,0 +1,279 @@
+---
+title: "Landscape PCA"
+author: "Fonti Kar"
+date: "8/27/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, include = T)
+rm(list=ls())
+sessionInfo()
+#R version 3.6.1 (2019-04-26)
+#Platform: x86_64-apple-darwin15.6.0 (64-bit)
+#Running under: macOS High Sierra 10.13.6
+
+pacman::p_load(tidyverse, magrittr, dplyr, ggplot2, GGally, MASS, psych, Matrix)
+```
+
+## Read in data
+
+```{r data read}
+landdat <- read.csv("data/landscape_dat.csv", stringsAsFactors = F)
+str(landdat)
+names(landdat)
+```
+
+## Tidying up some variable names
+
+```{r}
+landdat %<>% rename(site = Site.name,
+                    site_type = Type,
+                    Num_spiders = X..spiders,
+                    Percent_vegetation = X.vegetation,
+                    Percent_grass = X.grass,
+                    Percent_hardsurfance = X.hard.surface,
+                    Percent_water = X.water,
+                    Ave_week_income = Ave..weekly.income)
+
+head(landdat)
+```
+
+## Correcting Hoebeck's missing data
+
+```{r}
+landdat %>% filter(site == "Hoebeck")
+
+landdat %<>% mutate(living.area.per.person = ifelse(site == "Hoebeck", 0, living.area.per.person),
+                   Number.of.housing.complexes = ifelse(site == "Hoebeck", 0, Number.of.housing.complexes),
+                   Number.of.dwellings = ifelse(site == "Hoebeck", 0, Number.of.dwellings),
+                   Ave_week_income = ifelse(site == "Hoebeck", 0, Ave_week_income))
+```
+
+## Correlation among variables?
+
+```{r}
+landvars <- landdat %>% dplyr::select(Percent_vegetation:Ave_week_income)
+
+ggpairs(landvars, palette = "RdBu", label = TRUE, hjust = 0.75, size = 3, layout.exp = 1)
+```
+
+## Standardise and transform variables
+
+```{r}
+scaled_landdat <- landdat %>% mutate_at(names(landvars), scale)
+
+sc_landvars <- scaled_landdat %>% dplyr::select(Percent_vegetation:Ave_week_income)
+```
+
+## Correlations of scaled variables
+
+http://www.sthda.com/english/wiki/print.php?id=206
+
+```{r}
+land.cor <- cor(sc_landvars)
+
+# Bartlett's test
+cortest.bartlett(sc_landvars, n = 9)
+
+#Steiger's test
+cortest.mat(cor(sc_landvars), n1 = 9)
+ 
+# KMO(Kaiser-Meyer-Olkin)</span>
+KMO(cor(sc_landvars))
+ 
+# Determinant
+det(cor(sc_landvars))
+```
+
+#Do the PCA on scaled variables
+Useful resources: 
+
+https://www.analyticsvidhya.com/blog/2016/03/practical-guide-principal-component-analysis-python/
+
+http://www.sthda.com/english/articles/31-principal-component-methods-in-r-practical-guide/118-principal-component-analysis-in-r-prcomp-vs-princomp/
+
+Good for checks:
+https://www.r-bloggers.com/naive-principal-component-analysis-using-r/
+
+##Using the psych package
+
+```{r}
+pc1 = principal(sc_landvars, nfactors = 
+length(sc_landvars), rotate="varimax", scores = T)
+
+pc1
+
+str(pc1)
+
+#Biplot
+biplot(pc1)
+
+#screen plot
+plot(pc1$values, type ="b") 
+
+#health check
+pc1$residual %>% plot
+pc1$fit
+pc1$communality 
+
+#Put these PC scores back into original dataframe but first check it matches number of data points to number of rows in data
+length(prin1.0$x[,1])
+nrow(scaled_landdat)
+
+scaled_landdat$landPC1 <- pc1$scores[,1] #Strongly loaded on Percent_hardsurfance, Total.population.of.suburb, Population.density.people.km2, Num dwellings
+
+#write.csv(scaled_landdat, row.names = F, "output/sc_landscapdatPC.csv")
+
+arrange(scaled_landdat, site_type) %>% dplyr::select(site, site_type, landPC1)
+```
+
+## Take out the money and human related variables because they are not matching up!
+
+```{r}
+head(sc_landvars)
+
+sc_land_subset <- sc_landvars %>% dplyr::select(Percent_vegetation:site.distance.to.water)
+```
+
+#Pre-diagnoses
+```{r}
+sc_land_subset.cor <- psych::corr.test(sc_land_subset)
+
+# Bartlett's test
+cortest.bartlett(sc_land_subset.cor, n = nrow(sc_land_subset.cor))
+
+#Steiger's test
+cortest.mat(cor(sc_land_subset), n1 = length(cortest.mat))
+ 
+# KMO(Kaiser-Meyer-Olkin)</span>
+KMO(cor(sc_land_subset))
+ 
+# Determinant
+det(cor(sc_land_subset))
+```
+
+#Do the PCA on scaled variables of the subset (no human variables)
+
+No this is performing worst, not ideal at all.
+I will suggest using a score I think! Or the Categories she already has
+
+```{r}
+pc2 = psych::principal(sc_land_subset, nfactors = 
+length(sc_land_subset), rotate="varimax", scores = T)
+
+pc2 = pca(sc_land_subset, nfactors = 
+length(sc_land_subset), rotate="varimax", scores = T)
+
+pc2
+
+str(pc2)
+
+#Biplot
+biplot(pc2)
+
+#screen plot
+plot(pc2$values, type ="b") 
+
+#health check
+pc2$residual %>% plot
+pc2$fit
+pc2$communality 
+
+#Put these PC scores back into original dataframe but first check it matches number of data points to number of rows in data
+scaled_landdat$landsub_pc1 <- pc2$scores[,1] #Strongly loaded by Percent_water and site.distance.to.forrest 
+arrange(scaled_landdat, site_type) %>% dplyr::select(site, site_type, landsub_pc1) #The most rural spots are not getting the highest values in PC scores
+```
+
+#Trying another PCA function
+```{r}
+prcomp(landvars) %>% summary()
+prcomp(landvars) %>% plot()
+prcomp(landvars) %>% biplot()
+
+princomp(landvars) %>% summary()
+princomp(landvars) %>% plot()
+princomp(landvars) %>% biplot()
+princomp(landvars)$loadings
+
+names(scaled_landdat)
+```
+
+#Merge into data_core data
+```{r}
+data_core <- read.csv("data/processed/data_core.csv", stringsAsFactors = F)
+
+str(data_core)
+names(data_core)
+head(data_core)
+
+str(scaled_landdat)
+
+#Match site names
+data_core$site %>% unique() %>% sort() == scaled_landdat$site %>% unique() %>% sort()
+
+#Fix typos
+scaled_landdat %<>% mutate(site = ifelse(site == "Barmbeck Sud", "Barmbek Sud", scaled_landdat$site))
+scaled_landdat %<>% mutate(site = ifelse(site == "Botanical Gardens", "Botanical gardens", scaled_landdat$site))
+scaled_landdat %<>% mutate(site = ifelse(site == "Hesse Park", "Hasse Park", scaled_landdat$site))
+scaled_landdat %<>% mutate(site = ifelse(site == "Staarlandsrasse", "Staarlandstrasse", scaled_landdat$site))
+scaled_landdat %<>% mutate(site = ifelse(site == "Staats Forest", "Staats forest", scaled_landdat$site))
+
+#Merge in PCA and land data
+data_all <- left_join(data_core, scaled_landdat %>% dplyr::select(site, landPC1, landsub_pc1))
+
+write.csv(data_all, row.names = F, "data/processed/data_all.csv")
+```
+
+#Merge with lab_long_data
+```{r}
+lab_data_long <-read.csv("data/processed/lab_data_long.csv", stringsAsFactors = F)
+
+str(lab_data_long)
+names(lab_data_long)
+head(lab_data_long)
+
+str(scaled_landdat)
+
+#Match site names
+lab_data_long$site %>% unique() %>% sort() == scaled_landdat$site %>% unique() %>% sort()
+
+#Merge in PCA and land data
+lab_data_long_all <- left_join(lab_data_long, scaled_landdat %>% dplyr::select(site, landPC1, landsub_pc1))
+
+str(lab_data_long_all)
+
+write.csv(lab_data_long_all, row.names = F, "data/processed/lab_data_long_all.csv")
+```
+
+
+#Explore relationship with PC scores and urban categories
+```{r}
+#Morpho
+ggplot(data_all, aes(x = landPC1, y = z_ln_weight, label = site)) + 
+  geom_point(colour = "white") + 
+  geom_text() + 
+  stat_smooth(method = "lm")
+
+ggplot(data_all, aes(x = landsub_pc1, y = z_ln_weight, label = site)) + 
+  geom_point(colour = "white") + 
+  geom_text() + 
+  stat_smooth(method = "lm")
+
+#Behaviour
+ggplot(data_all, aes(x = landPC1, y = z_ln_Tactive, label = site_type)) + 
+  geom_point(colour = "white") + 
+  geom_text() + 
+  stat_smooth(method = "lm")
+
+ggplot(data_all, aes(x = landPC1, y = z_poke_score, label = site_type)) + 
+  geom_point(colour = "white") + 
+  geom_text() + 
+  stat_smooth(method = "lm")
+
+ggplot(data_all, aes(x = landPC1, y = z_ln_tot_prey_attack, label = site_type)) + 
+  geom_point(colour = "white") + 
+  geom_text() + 
+  stat_smooth(method = "lm")
+```
+

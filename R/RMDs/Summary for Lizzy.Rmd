@@ -1,0 +1,207 @@
+---
+title: "Summary for Lizzy"
+author: "Fonti Kar"
+date: "8/9/2020"
+output: 
+  word_document:
+    reference_docx: "Style_guide.docx"
+  html_document:
+    echo: FALSE
+    warning: FALSE
+    error: FALSE
+    tidy: TRUE
+---
+
+```{r setup, include = F}
+knitr::opts_chunk$set(echo = F, include = F)
+rm(list=ls())
+sessionInfo()
+# R version 3.6.1 (2019-07-05)
+# Platform: x86_64-apple-darwin15.6.0 (64-bit)
+# Running under: macOS High Sierra 10.13.6
+
+pacman::p_load(tidyverse, magrittr, dplyr, ggplot2, GGally, patchwork, MCMCglmm, brms, janitor)
+```
+
+```{r, include = F}
+data <- read.csv("~/Dropbox/Collaborations/1 - Spider_urban_personality/data/processed/data_for_analysis.csv", stringsAsFactors = F)
+data_long <- read.csv("~/Dropbox/Collaborations/1 - Spider_urban_personality/data/processed/data_long_analysis.csv", stringsAsFactors = F)
+data_all <- read.csv("~/Dropbox/Collaborations/1 - Spider_urban_personality/data/processed/data_allvars.csv") #for descirptive stats calculations
+
+#Fix NA sex
+data %<>% mutate(sex = ifelse(is.na(sex), "I", data$sex))
+data_long %<>% mutate(sex = ifelse(is.na(sex), "I", data$sex))
+
+#Summarising data
+data_all %>% select(poke_score, tot_prey_attack, Tactive) %>% 
+  summarise(mu_poke = mean(poke_score, na.rm = T),
+            mu_tot_prey_attack = mean(tot_prey_attack, na.rm = T),
+            mu_Tactive = mean(Tactive, na.rm = T))
+
+data_all %>% select(poke_score, tot_prey_attack, Tactive) %>% 
+  summarise(sd_poke = sd(poke_score, na.rm = T),
+            sd_tot_prey_attack = sd(tot_prey_attack, na.rm = T),
+            sd_Tactive = sd(Tactive, na.rm = T))
+
+```
+
+## Description of data
+
+We collected a total of `r nrow(data)` spiders across rural (n = `r data %>% filter(site_type == "Rural") %>% nrow()`), sub urbarn (n = `r data %>% filter(site_type == "Sub urbarn") %>% nrow()`) and urban (n = `r data %>% filter(site_type == "Urban") %>% nrow()`) sites. The average weight for an spider was `r mean(data_all$weight, na.rm = T) %>% round(2)`g (SD = `r sd(data_all$weight, na.rm = T) %>% round(2)`). 
+
+Overall, the mean response score to a simulated predator attack was `r mean(data_all$poke_score, na.rm = T) %>% round(2)` (SD = `r sd(data$poke_score, na.rm = T) %>% round(2)`). In generally, the average time spent moving was `r mean(data_all$Tactive, na.rm = T) %>% round(2)` seconds (SD = `r sd(data_all$poke_score, na.rm = T) %>% round(2)`) and the average number of prey attacked was `r mean(data_all$tot_prey_attack, na.rm = T) %>% round(2)` (SD = `r sd(data_all$tot_prey_attack, na.rm = T) %>% round(2)`)
+
+## Are there differences in behavioural trait means between site types
+
+Accounting for individual differences, sex, mass as well as the number of days without a web, we found there were no differences in the average time spent moving in the lab as well as the mean response score to a simulated predator attack between site types (Table XX). There were no site differences in the total number of prey attacked. Weight is the strongest driver of these behaviours (Table XX).
+
+```{r, include = TRUE}
+mod.1 <- readRDS("~/Dropbox/Collaborations/1 - Spider_urban_personality/output/rds/mod.1")
+mod.2 <- readRDS("~/Dropbox/Collaborations/1 - Spider_urban_personality/output/rds/mod.2")
+
+summary(mod.1)
+summary(mod.2)
+
+complete_prey <- data[complete.cases(data$z_ln_tot_prey_attack),]
+mod.9 <- glm(z_ln_tot_prey_attack ~ sex + site_type + z_ln_weight, data = complete_prey)
+summary(mod.9)
+```
+
+## Do behavioural traits covary with landscape variables (PCA)
+
+After accounting for individual differences, we found that the mean response score to a simulated predator attack did not covary with landscape variation (Table XX). The average time spent moving in the lab weakly covaried with landscape variation however this was not significant (Table XX).
+
+Averaging across individual variation, we found that the average time spent moving in the lab was decreased with landscape PC1 scores (Table XX). In other words, spider activity decreased with increasing percentage of hard surfaces, population size and density. There was no relationship with total prey attacked or response to simulated predator attack with landscape variation.
+
+```{r, include = TRUE}
+mod.3 <- readRDS("~/Dropbox/Collaborations/1 - Spider_urban_personality/output/rds/mod.3")
+mod.4 <- readRDS("~/Dropbox/Collaborations/1 - Spider_urban_personality/output/rds/mod.4")
+
+summary(mod.4)
+summary(mod.3)
+
+#Poke
+complete_poke <- data[complete.cases(data$z_poke_score),]
+mod.12 <- glm(z_poke_score ~ sex + landPC1 + z_ln_weight, data = complete_poke)
+summary(mod.12)
+
+#Tactive
+complete_Tactive <- data[complete.cases(data$z_ln_Tactive),]
+mod.11 <- glm(z_ln_Tactive ~ sex + landPC1 + z_ln_weight, data = complete_Tactive)
+summary(mod.11)
+
+#Prey attacked
+complete_prey <- data[complete.cases(data$z_ln_tot_prey_attack),]
+mod.10 <- glm(z_ln_tot_prey_attack ~ sex + landPC1 + z_ln_weight, data = complete_prey)
+summary(mod.10)
+```
+
+## Do behavourial traits covary with microhabitat variables (PCA)
+
+Microhabitat did not predict variation behavioural traits (Table XX)
+
+```{r, include = TRUE}
+mod.5 <- readRDS("~/Dropbox/Collaborations/1 - Spider_urban_personality/output/rds/mod.5")
+mod.6 <- readRDS("~/Dropbox/Collaborations/1 - Spider_urban_personality/output/rds/mod.6")
+
+summary(mod.5)
+summary(mod.6)
+
+#Poke
+mod.12 <- glm(z_poke_score ~ sex + mh_pc1 + z_ln_weight, data = complete_poke)
+summary(mod.12)
+
+#Prey attacked
+mod.10 <- glm(z_ln_tot_prey_attack ~ sex + mh_pc1 + z_ln_weight, data = complete_prey)
+summary(mod.10)
+
+#Tactive
+mod.11 <- glm(z_ln_Tactive ~ sex + mh_pc1 + z_ln_weight, data = complete_Tactive)
+summary(mod.11)
+```
+
+## Are behavioural traits overall repeatable? 
+
+```{r}
+poke_score_rep <- mod.1$VCV[,"spider_id"]/(mod.1$VCV[,"spider_id"] + mod.1$VCV[,"units"]) 
+posterior_summary(poke_score_rep) %>% round(2) #Point estimate and credible intervals
+
+Tactive_score_rep <- mod.2$VCV[,"spider_id"]/(mod.2$VCV[,"spider_id"] + mod.2$VCV[,"units"]) 
+posterior_summary(Tactive_score_rep) %>% round(2) #Point estimate and credible intervals
+```
+
+Irrespective of site type, both time spent moving in the lab (repeatability = `r posterior_summary(Tactive_score_rep)[1] %>% round(2)`, 95% CI = `r posterior_summary(Tactive_score_rep)[3] %>% round(2)` - `r posterior_summary(Tactive_score_rep)[4] %>% round(2)`) as well as response to simulated predator attack (repeatability = `r posterior_summary(poke_score_rep)[1] %>% round(2)`, 95% CI = `r posterior_summary(poke_score_rep)[3] %>% round(2)` - `r posterior_summary(poke_score_rep)[4] %>% round(2)`) were repeatable traits indicating that spiders displayed consistent individual differences in these behaviors.
+
+## Does repeatabilty differ between site types
+
+There were no significant differences in all three behavioural traits repeatabilty across site types (Fig XX). There was a trend reduced repeatability in urban sites however credible intervals overlapped with rural and suburban sites.
+```{r, include = TRUE}
+rural_data_long <- data_long %>% filter(site_type == "Rural")
+sub_data_long <- data_long %>% filter(site_type == "Sub urban")
+urb_data_long <- data_long %>% filter(site_type == "Urban") 
+
+#Poke
+mod.1_rural <- readRDS("~/Dropbox/Collaborations/1 - Spider_urban_personality/output/rds/mod.1_rural")
+mod.1_sub <- readRDS("~/Dropbox/Collaborations/1 - Spider_urban_personality/output/rds/mod.1_sub")
+mod.1_urb <- readRDS("~/Dropbox/Collaborations/1 - Spider_urban_personality/output/rds/mod.1_urb")
+
+rural_poke_score_rep <- mod.1_rural$VCV[,"spider_id"]/(mod.1_rural$VCV[,"spider_id"] + mod.1_rural$VCV[,"units"]) 
+#posterior_summary(rural_poke_score_rep) #Point estimate and credible intervals
+
+sub_poke_score_rep <- mod.1_sub$VCV[,"spider_id"]/(mod.1_sub$VCV[,"spider_id"] + mod.1_sub$VCV[,"units"]) 
+#posterior_summary(sub_poke_score_rep) #Point estimate and credible intervals
+
+urb_poke_score_rep <- mod.1_urb$VCV[,"spider_id"]/(mod.1_urb$VCV[,"spider_id"] + mod.1_urb$VCV[,"units"]) 
+#posterior_summary(urb_poke_score_rep) #Point estimate and credible intervals
+
+mod.2_rural <- readRDS("~/Dropbox/Collaborations/1 - Spider_urban_personality/output/rds/mod.2_rural")
+mod.2_sub <- readRDS("~/Dropbox/Collaborations/1 - Spider_urban_personality/output/rds/mod.2_sub")
+mod.2_urb <- readRDS("~/Dropbox/Collaborations/1 - Spider_urban_personality/output/rds/mod.2_urb")
+
+rural_Tactive_score_rep <- mod.2_rural$VCV[,"spider_id"]/(mod.2_rural$VCV[,"spider_id"] + mod.2_rural$VCV[,"units"])
+#posterior_summary(rural_Tactive_score_rep) #Point estimate and credible intervals
+
+sub_Tactive_score_rep <- mod.2_sub$VCV[,"spider_id"]/(mod.2_sub$VCV[,"spider_id"] + mod.2_sub$VCV[,"units"]) 
+#posterior_summary(sub_Tactive_score_rep) #Point estimate and credible intervals
+
+urb_Tactive_score_rep <- mod.2_urb$VCV[,"spider_id"]/(mod.2_urb$VCV[,"spider_id"] + mod.2_urb$VCV[,"units"]) 
+#posterior_summary(urb_Tactive_score_rep) #Point estimate and credible intervals
+
+#Compile data for figure
+site_compare_rep <- data.frame(matrix(ncol = 5, nrow = 6))
+colnames(site_compare_rep) <- c("Site type", "Behaviour", "Repeatabilty estimate", "Lower", "Upper") 
+site_compare_rep$`Site type` <- rep(c("Rural", "Suburban", "Urban"), 2) 
+site_compare_rep$`Behaviour` <- rep(c("Respone to attack", "Time spent moving"), each = 3) 
+
+#Fill in table
+site_compare_rep[1,3:5] <- posterior_summary(rural_poke_score_rep)[c(1,3,4)] %>% round(digits = 3)
+site_compare_rep[2,3:5] <- posterior_summary(sub_poke_score_rep)[c(1,3,4)] %>% round(digits = 3)
+site_compare_rep[3,3:5] <- posterior_summary(urb_poke_score_rep)[c(1,3,4)] %>% round(digits = 3)
+
+site_compare_rep[4,3:5] <- posterior_summary(rural_Tactive_score_rep)[c(1,3,4)] %>% round(digits = 3)
+site_compare_rep[5,3:5] <- posterior_summary(sub_Tactive_score_rep)[c(1,3,4)] %>% round(digits = 4)
+site_compare_rep[6,3:5] <- posterior_summary(urb_Tactive_score_rep)[c(1,3,4)] %>% round(digits = 4)
+
+ggplot(site_compare_rep, aes(x = `Site type`, y = `Repeatabilty estimate`, colour = `Behaviour`)) +
+  geom_point(size = 2,  position = position_dodge(0.5)) + 
+  geom_errorbar(aes(ymin = `Lower`, ymax = `Upper`), width = 0, position = position_dodge(0.5)) + 
+  scale_y_continuous(limits = c(0, 1)) + 
+  theme_minimal()
+```
+
+## How do the traits covary overall?
+
+After accounting for sex and mass, there were no significant correlations among all three behavioural traits. 
+
+```{r}
+mod.16 <- readRDS("~/Dropbox/Collaborations/1 - Spider_urban_personality/output/rds/mod.16")
+
+summary(mod.16)
+```
+
+## TBC... Do behavioural trait correlations vary between site types? (Partial correlations)
+
+```{r}
+
+```
+
